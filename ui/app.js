@@ -226,7 +226,7 @@ async function deleteConversation(convId) {
     state.convId = null;
     document.getElementById('messages').innerHTML =
       '<div class="empty-state"><div class="empty-logo">⚡</div>' +
-      '<div class="empty-title">Islas</div><div class="empty-sub">Start a conversation</div></div>';
+      '<div class="empty-title">Islas LLM</div><div class="empty-sub">Start a conversation</div></div>';
   }
   await loadConversations();
 }
@@ -295,7 +295,7 @@ function addMessageEl(role, msgId = null) {
 
   const label = document.createElement('div');
   label.className = 'label';
-  label.textContent = role === 'user' ? 'You' : 'Islas';
+  label.textContent = role === 'user' ? 'You' : 'Islas LLM';
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
