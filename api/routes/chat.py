@@ -18,6 +18,7 @@ DEFAULT_MAX_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 MAX_PROMPT_TOKENS = 3500   # ~500 buffer for response within Mistral's 4096 limit
 TOKEN_BATCH = 6            # tokens to accumulate before each WebSocket send
+FLUSH_INTERVAL = 0.03      # seconds — flush partial buffer if no token arrives within this window
 GENERATION_TIMEOUT = 120   # seconds before a hung generation is cancelled
 
 _generation_lock = asyncio.Lock()
@@ -99,6 +100,11 @@ async def _stream_response(
 
     Thread(target=generate, daemon=True).start()
 
+    async def flush(buf: list[str]) -> list[str]:
+        if buf:
+            await websocket.send_json({"type": "token", "content": "".join(buf)})
+        return []
+
     full_text = ""
     buffer: list[str] = []
 
@@ -110,16 +116,19 @@ async def _stream_response(
         except asyncio.QueueEmpty:
             pass
 
-        token = await token_queue.get()
+        try:
+            token = await asyncio.wait_for(token_queue.get(), timeout=FLUSH_INTERVAL)
+        except asyncio.TimeoutError:
+            buffer = await flush(buffer)
+            continue
+
         if token is None:
-            if buffer:
-                await websocket.send_json({"type": "token", "content": "".join(buffer)})
+            await flush(buffer)
             break
         full_text += token
         buffer.append(token)
         if len(buffer) >= TOKEN_BATCH:
-            await websocket.send_json({"type": "token", "content": "".join(buffer)})
-            buffer = []
+            buffer = await flush(buffer)
 
     return full_text
 

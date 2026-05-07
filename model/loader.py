@@ -18,6 +18,17 @@ def load_model() -> None:
     logger.info("Loading model: %s", model_id)
     _model, _tokenizer = load(model_id)
     logger.info("Model ready")
+    _warmup()
+
+
+def _warmup() -> None:
+    from collections import deque
+    from mlx_lm import stream_generate
+    from mlx_lm.sample_utils import make_sampler
+    logger.info("Warming up model...")
+    sampler = make_sampler(temp=0.0)
+    deque(stream_generate(_model, _tokenizer, "Hi", max_tokens=1, sampler=sampler), maxlen=0)
+    logger.info("Warm-up complete")
 
 
 def get_model_and_tokenizer():

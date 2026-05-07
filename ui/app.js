@@ -46,21 +46,10 @@ let _wsQueue = [];
 let _pingInterval = null;
 
 function setStatus(text, ok = true) {
-  let bar = document.getElementById('status-bar');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'status-bar';
-    bar.style.cssText = (
-      'position:fixed;top:0;left:0;right:0;padding:6px;text-align:center;'
-      + 'font-size:0.78rem;z-index:100;transition:opacity 0.4s;'
-    );
-    document.body.appendChild(bar);
-  }
+  const bar = document.getElementById('status-bar');
   bar.textContent = text;
-  bar.style.background = ok ? '#1a3a1a' : '#3a1a1a';
-  bar.style.color = ok ? '#7cfc7c' : '#ff6b6b';
-  bar.style.opacity = '1';
-  if (ok) setTimeout(() => { bar.style.opacity = '0'; }, 2000);
+  bar.className = `status-bar visible ${ok ? 'ok' : 'err'}`;
+  if (ok) setTimeout(() => bar.classList.remove('visible'), 2000);
 }
 
 function connectWs(convId) {
@@ -110,7 +99,9 @@ const _wsHandlers = {
   },
   token(data) {
     if (!state.activeBubble) return;
+    const isFirst = !state.activeBubble._raw;
     state.activeBubble._raw = (state.activeBubble._raw || '') + data.content;
+    if (isFirst) state.activeBubble.classList.add('cursor');
     state.activeBubble.innerHTML = renderMarkdown(state.activeBubble._raw);
     scrollToBottom();
   },
@@ -185,6 +176,8 @@ async function newConversation() {
 async function openConversation(convId) {
   if (state.generating) stopGeneration();
   state.convId = convId;
+  document.querySelector('.sidebar')?.classList.remove('open');
+  document.getElementById('mobile-overlay')?.classList.remove('visible');
 
   document.querySelectorAll('.conv-item').forEach(el => {
     el.classList.toggle('active', el.dataset.id === convId);
@@ -247,7 +240,7 @@ async function sendMessage(content, truncateFromId = null) {
 
   const asstBubble = addMessageEl('assistant');
   asstBubble._raw = '';
-  asstBubble.classList.add('cursor');
+  asstBubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
   state.activeBubble = asstBubble;
 
   beginGeneration();
@@ -514,6 +507,24 @@ function init() {
       setTimeout(() => (btn.textContent = 'Copy'), 2000);
     });
   });
+
+  // Suggested prompts
+  document.querySelectorAll('.suggestion').forEach(btn => {
+    btn.addEventListener('click', () => sendMessage(btn.textContent.trim()));
+  });
+
+  // Mobile sidebar toggle
+  const sidebar = document.querySelector('.sidebar');
+  const mobileOverlay = document.getElementById('mobile-overlay');
+  function closeMobileSidebar() {
+    sidebar.classList.remove('open');
+    mobileOverlay.classList.remove('visible');
+  }
+  document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    mobileOverlay.classList.toggle('visible');
+  });
+  mobileOverlay?.addEventListener('click', closeMobileSidebar);
 
   loadConversations();
   input.focus();

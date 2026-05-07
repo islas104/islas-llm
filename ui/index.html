@@ -9,6 +9,8 @@
 </head>
 <body>
 
+  <div id="status-bar" class="status-bar"></div>
+
   <!-- Sidebar -->
   <aside class="sidebar" aria-label="Conversations">
     <div class="sidebar-top">
@@ -32,11 +34,25 @@
 
   <!-- Main -->
   <main class="main">
+    <div class="mobile-header">
+      <button id="sidebar-toggle" class="sidebar-toggle" title="Menu">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M3 6h18M3 12h18M3 18h18"/>
+        </svg>
+      </button>
+      <span class="logo" style="font-size:1rem">⚡ Islas LLM</span>
+    </div>
     <div id="messages" class="messages">
       <div class="empty-state" id="empty-state">
         <div class="empty-logo">⚡</div>
         <div class="empty-title">Islas LLM</div>
-        <div class="empty-sub">Start a conversation</div>
+        <div class="empty-sub">How can I help you today?</div>
+        <div class="suggestions">
+          <button class="suggestion">Explain a concept simply</button>
+          <button class="suggestion">Write or review code</button>
+          <button class="suggestion">Help me debug a problem</button>
+          <button class="suggestion">Help with writing or editing</button>
+        </div>
       </div>
     </div>
     <div class="input-area">
@@ -58,6 +74,8 @@
       <div class="input-hint">Enter to send · Shift+Enter for new line</div>
     </div>
   </main>
+
+  <div id="mobile-overlay" class="mobile-overlay"></div>
 
   <!-- Settings panel -->
   <div id="settings-overlay" class="overlay hidden"></div>
