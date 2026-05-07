@@ -1,0 +1,135 @@
+import time
+import uuid
+from pathlib import Path
+from typing import Optional
+
+import aiosqlite
+
+DB_PATH = Path("forge.db")
+
+_SCHEMA = """
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+
+CREATE TABLE IF NOT EXISTS conversations (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL DEFAULT 'New Chat',
+    system_prompt TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role            TEXT NOT NULL,
+    content         TEXT NOT NULL,
+    created_at      INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_conv
+    ON messages(conversation_id, created_at);
+"""
+
+
+async def init_db() -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executescript(_SCHEMA)
+        await db.commit()
+
+
+def _now() -> int:
+    return int(time.time() * 1000)
+
+
+async def create_conversation(title: str = "New Chat", system_prompt: str = "") -> dict:
+    now = _now()
+    cid = str(uuid.uuid4())
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO conversations VALUES (?,?,?,?,?)",
+            (cid, title, system_prompt, now, now),
+        )
+        await db.commit()
+    return {"id": cid, "title": title, "system_prompt": system_prompt,
+            "created_at": now, "updated_at": now}
+
+
+async def list_conversations() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id,title,system_prompt,created_at,updated_at "
+            "FROM conversations ORDER BY updated_at DESC LIMIT 100"
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def get_conversation(cid: str) -> Optional[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM conversations WHERE id=?", (cid,)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+
+async def update_conversation(cid: str, **fields) -> None:
+    if not fields:
+        return
+    fields["updated_at"] = _now()
+    cols = ", ".join(f"{k}=?" for k in fields)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(f"UPDATE conversations SET {cols} WHERE id=?",
+                         (*fields.values(), cid))
+        await db.commit()
+
+
+async def delete_conversation(cid: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM conversations WHERE id=?", (cid,))
+        await db.commit()
+
+
+async def get_messages(cid: str) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT id,role,content,created_at FROM messages "
+            "WHERE conversation_id=? ORDER BY created_at",
+            (cid,),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def add_message(cid: str, role: str, content: str) -> dict:
+    now = _now()
+    mid = str(uuid.uuid4())
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO messages VALUES (?,?,?,?,?)",
+            (mid, cid, role, content, now),
+        )
+        await db.execute(
+            "UPDATE conversations SET updated_at=? WHERE id=?", (now, cid)
+        )
+        await db.commit()
+    return {"id": mid, "conversation_id": cid, "role": role,
+            "content": content, "created_at": now}
+
+
+async def truncate_from_message(cid: str, message_id: str) -> None:
+    """Delete message_id and every message after it in the conversation."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT rowid FROM messages WHERE id=?", (message_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return
+        await db.execute(
+            "DELETE FROM messages WHERE conversation_id=? AND rowid>=?",
+            (cid, row[0]),
+        )
+        await db.commit()
