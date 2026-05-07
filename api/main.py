@@ -36,7 +36,7 @@ _SECURITY_HEADERS = {
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     import asyncio
     from api.db import init_db
     from model.loader import load_model
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Forge", version="0.2.0", lifespan=lifespan,
+app = FastAPI(title="Islas LLM", version="0.2.0", lifespan=lifespan,
               docs_url=None, redoc_url=None)
 
 _origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",")
@@ -75,7 +75,7 @@ async def gate(request: Request, call_next):
 
 
 @app.exception_handler(Exception)
-async def unhandled(_: Request, exc: Exception):
+async def unhandled(_: Request, _exc: Exception):
     logger.exception("Unhandled error")
     return JSONResponse({"error": "Internal server error"}, status_code=500)
 
