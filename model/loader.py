@@ -14,7 +14,7 @@ def load_model() -> None:
     if _model is not None:
         return
     from mlx_lm import load
-    model_id = os.getenv("MODEL_ID", "mlx-community/Mistral-7B-Instruct-v0.3-8bit")
+    model_id = os.getenv("MODEL_ID", "mlx-community/Mistral-7B-Instruct-v0.3-4bit")
     logger.info("Loading model: %s", model_id)
     _model, _tokenizer = load(model_id)
     logger.info("Model ready")
@@ -33,3 +33,9 @@ def make_cache():
         return _model.make_cache()
     except AttributeError:
         return None
+
+
+def count_tokens(text: str) -> int:
+    if _tokenizer is None:
+        return len(text) // 4
+    return len(_tokenizer.encode(text))

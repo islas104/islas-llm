@@ -38,11 +38,12 @@ _SECURITY_HEADERS = {
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     import asyncio
-    from api.db import init_db
+    from api.db import init_db, close_db
     from model.loader import load_model
     await init_db()
     await asyncio.to_thread(load_model)
     yield
+    await close_db()
 
 
 app = FastAPI(title="Islas LLM", version="0.2.0", lifespan=lifespan,

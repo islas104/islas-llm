@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_CONTENT_LEN = int(os.getenv("MAX_CONTENT_LEN", "8000"))
-MAX_MESSAGES = 100
 MAX_NEW_TOKENS_LIMIT = 2048
 DEFAULT_MAX_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
+MAX_PROMPT_TOKENS = 3500   # ~500 buffer for response within Mistral's 4096 limit
+TOKEN_BATCH = 6            # tokens to accumulate before each WebSocket send
+GENERATION_TIMEOUT = 120   # seconds before a hung generation is cancelled
 
-_executor = ThreadPoolExecutor(max_workers=1)
 _generation_lock = asyncio.Lock()
 
 
@@ -34,14 +35,35 @@ def _parse_request(data: dict) -> dict | None:
     }
 
 
-def _build_conversation(history: list[dict], system_prompt: str) -> list[dict]:
+def _build_prompt(history: list[dict], system_prompt: str) -> tuple[str, bool]:
+    """Build prompt string, trimming oldest messages if needed to fit token budget.
+    Returns (prompt, was_trimmed)."""
+    _, tokenizer = get_model_and_tokenizer()
+    messages = list(history)
+
+    while messages:
+        conversation = []
+        if system_prompt:
+            conversation.append({"role": "system", "content": system_prompt})
+        conversation.extend({"role": m["role"], "content": m["content"]} for m in messages)
+        prompt = tokenizer.apply_chat_template(
+            conversation, tokenize=False, add_generation_prompt=True
+        )
+        if len(tokenizer.encode(prompt)) <= MAX_PROMPT_TOKENS:
+            return prompt, len(messages) < len(history)
+        messages.pop(0)
+
+    # Absolute fallback: system prompt + latest message only
     conversation = []
     if system_prompt:
         conversation.append({"role": "system", "content": system_prompt})
-    conversation.extend({"role": m["role"], "content": m["content"]} for m in history)
-    if len(conversation) > MAX_MESSAGES:
-        conversation = conversation[:1] + conversation[-(MAX_MESSAGES - 1):]
-    return conversation
+    if history:
+        m = history[-1]
+        conversation.append({"role": m["role"], "content": m["content"]})
+    prompt = tokenizer.apply_chat_template(
+        conversation, tokenize=False, add_generation_prompt=True
+    )
+    return prompt, True
 
 
 async def _stream_response(
@@ -63,26 +85,41 @@ async def _stream_response(
     if kv_cache is not None:
         gen_kwargs["prompt_cache"] = kv_cache
 
-    gen = stream_generate(**gen_kwargs)
-    loop = asyncio.get_event_loop()
+    token_queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def generate():
+        try:
+            for resp in stream_generate(**gen_kwargs):
+                if stop_event.is_set():
+                    break
+                loop.call_soon_threadsafe(token_queue.put_nowait, resp.text)
+        finally:
+            loop.call_soon_threadsafe(token_queue.put_nowait, None)
+
+    Thread(target=generate, daemon=True).start()
+
     full_text = ""
+    buffer: list[str] = []
 
     while True:
-        if stop_event.is_set():
-            break
         try:
             ctrl = msg_queue.get_nowait()
             if ctrl.get("type") == "stop":
                 stop_event.set()
-                break
         except asyncio.QueueEmpty:
             pass
 
-        resp = await loop.run_in_executor(_executor, lambda: next(gen, None))
-        if resp is None:
+        token = await token_queue.get()
+        if token is None:
+            if buffer:
+                await websocket.send_json({"type": "token", "content": "".join(buffer)})
             break
-        full_text += resp.text
-        await websocket.send_json({"type": "token", "content": resp.text})
+        full_text += token
+        buffer.append(token)
+        if len(buffer) >= TOKEN_BATCH:
+            await websocket.send_json({"type": "token", "content": "".join(buffer)})
+            buffer = []
 
     return full_text
 
@@ -109,20 +146,27 @@ async def _handle_message(
     await websocket.send_json({"type": "message_saved", "message": user_msg})
 
     history = await db.get_messages(conversation_id)
-    conversation = _build_conversation(history, conv.get("system_prompt", ""))
-    prompt = get_model_and_tokenizer()[1].apply_chat_template(
-        conversation, tokenize=False, add_generation_prompt=True
-    )
+    prompt, was_trimmed = _build_prompt(history, conv.get("system_prompt", ""))
+    if was_trimmed:
+        kv_cache = make_cache()
 
     stop_event.clear()
     full_response = ""
 
     async with _generation_lock:
         try:
-            full_response = await _stream_response(
-                websocket, prompt, req["max_tokens"], req["temperature"],
-                kv_cache, stop_event, msg_queue,
+            full_response = await asyncio.wait_for(
+                _stream_response(
+                    websocket, prompt, req["max_tokens"], req["temperature"],
+                    kv_cache, stop_event, msg_queue,
+                ),
+                timeout=GENERATION_TIMEOUT,
             )
+        except asyncio.TimeoutError:
+            stop_event.set()
+            logger.warning("Generation timed out in %s", conversation_id)
+            await websocket.send_json({"type": "error", "message": "Generation timed out"})
+            return conv, kv_cache
         except Exception:
             logger.exception("Generation error in %s", conversation_id)
             await websocket.send_json({"type": "error", "message": "Generation failed"})
