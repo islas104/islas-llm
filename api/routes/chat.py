@@ -1,18 +1,14 @@
 import os
-import asyncio
-import torch
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from transformers import TextIteratorStreamer
-from threading import Thread
 from model.loader import get_model_and_tokenizer
 
 router = APIRouter()
 
 
 class Message(BaseModel):
-    role: str  # "user" or "assistant"
+    role: str
     content: str
 
 
@@ -24,35 +20,28 @@ class ChatRequest(BaseModel):
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
+    from mlx_lm import stream_generate
+
     model, tokenizer = get_model_and_tokenizer()
 
     conversation = [{"role": m.role, "content": m.content} for m in request.messages]
-
     prompt = tokenizer.apply_chat_template(
         conversation, tokenize=False, add_generation_prompt=True
     )
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
-    streamer = TextIteratorStreamer(
-        tokenizer, skip_prompt=True, skip_special_tokens=True
-    )
+    from mlx_lm.sample_utils import make_sampler
 
-    generation_kwargs = dict(
-        **inputs,
-        streamer=streamer,
-        max_new_tokens=request.max_new_tokens,
-        temperature=request.temperature,
-        do_sample=request.temperature > 0,
-    )
-
-    thread = Thread(target=model.generate, kwargs=generation_kwargs)
-    thread.start()
+    sampler = make_sampler(temp=request.temperature)
 
     async def token_stream():
-        loop = asyncio.get_event_loop()
-        for token in streamer:
-            yield token
-            await asyncio.sleep(0)
+        for response in stream_generate(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=request.max_new_tokens,
+            sampler=sampler,
+        ):
+            yield response.text
 
     return StreamingResponse(token_stream(), media_type="text/plain")
 
