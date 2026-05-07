@@ -42,29 +42,64 @@ const state = {
 };
 
 // ── WebSocket ────────────────────────────────────────────────────────────────
+let _wsQueue = [];
+let _pingInterval = null;
+
+function setStatus(text, ok = true) {
+  let bar = document.getElementById('status-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'status-bar';
+    bar.style.cssText = (
+      'position:fixed;top:0;left:0;right:0;padding:6px;text-align:center;'
+      + 'font-size:0.78rem;z-index:100;transition:opacity 0.4s;'
+    );
+    document.body.appendChild(bar);
+  }
+  bar.textContent = text;
+  bar.style.background = ok ? '#1a3a1a' : '#3a1a1a';
+  bar.style.color = ok ? '#7cfc7c' : '#ff6b6b';
+  bar.style.opacity = '1';
+  if (ok) setTimeout(() => { bar.style.opacity = '0'; }, 2000);
+}
+
 function connectWs(convId) {
-  if (state.ws) state.ws.close();
+  if (state.ws) { state.ws.onclose = null; state.ws.close(); }
+  if (_pingInterval) { clearInterval(_pingInterval); _pingInterval = null; }
+  _wsQueue = [];
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  state.ws = new WebSocket(`${proto}://${location.host}/api/ws/${convId}`);
+  const ws = new WebSocket(`${proto}://${location.host}/api/ws/${convId}`);
+  state.ws = ws;
 
-  state.ws.onmessage = e => handleWsEvent(JSON.parse(e.data));
-  state.ws.onerror   = () => console.error('WS error');
-  state.ws.onclose   = () => { if (state.generating) endGeneration(); };
+  ws.onopen = () => {
+    setStatus('Connected', true);
+    _wsQueue.forEach(d => ws.send(JSON.stringify(d)));
+    _wsQueue = [];
+    _pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+    }, 25000);
+  };
 
-  // Keepalive
-  const ping = setInterval(() => {
-    if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify({ type: 'ping' }));
-    } else {
-      clearInterval(ping);
+  ws.onmessage = e => handleWsEvent(JSON.parse(e.data));
+
+  ws.onerror = () => setStatus('Connection error — retrying…', false);
+
+  ws.onclose = () => {
+    if (state.generating) endGeneration();
+    if (state.convId === convId) {
+      setStatus('Disconnected — reconnecting…', false);
+      setTimeout(() => { if (state.convId === convId) connectWs(convId); }, 2000);
     }
-  }, 25000);
+  };
 }
 
 function wsSend(data) {
-  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+  if (!state.ws) return;
+  if (state.ws.readyState === WebSocket.OPEN) {
     state.ws.send(JSON.stringify(data));
+  } else if (state.ws.readyState === WebSocket.CONNECTING) {
+    _wsQueue.push(data);  // send once connection opens
   }
 }
 
@@ -155,10 +190,15 @@ async function openConversation(convId) {
     el.classList.toggle('active', el.dataset.id === convId);
   });
 
-  const data = await apiFetch(`/api/conversations/${convId}`);
-  renderConversation(data);
-  connectWs(convId);
-  loadSettingsFromConv(data);
+  try {
+    const data = await apiFetch(`/api/conversations/${convId}`);
+    if (!data) return;
+    renderConversation(data);
+    connectWs(convId);
+    loadSettingsFromConv(data);
+  } catch (err) {
+    setStatus(`Failed to load conversation: ${err.message}`, false);
+  }
 }
 
 function renderConversation(data) {
@@ -194,7 +234,12 @@ async function deleteConversation(convId) {
 // ── Messaging ────────────────────────────────────────────────────────────────
 async function sendMessage(content, truncateFromId = null) {
   if (state.generating) return;
-  if (!state.convId) await newConversation();
+  if (!state.convId) {
+    try { await newConversation(); } catch (err) {
+      setStatus(`Could not start conversation: ${err.message}`, false);
+      return;
+    }
+  }
 
   const userBubble = addMessageEl('user');
   userBubble.textContent = content;
