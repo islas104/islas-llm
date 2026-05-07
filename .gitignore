@@ -17,3 +17,6 @@ env/
 *.log
 checkpoints/
 wandb/
+forge.db
+forge.db-shm
+forge.db-wal
