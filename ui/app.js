@@ -218,8 +218,17 @@ async function deleteConversation(convId) {
     if (state.ws) state.ws.close();
     state.convId = null;
     document.getElementById('messages').innerHTML =
-      '<div class="empty-state"><div class="empty-logo">⚡</div>' +
-      '<div class="empty-title">Islas LLM</div><div class="empty-sub">Start a conversation</div></div>';
+      '<div class="empty-state" id="empty-state"><div class="empty-logo">⚡</div>' +
+      '<div class="empty-title">Islas LLM</div><div class="empty-sub">How can I help you today?</div>' +
+      '<div class="suggestions">' +
+      '<button class="suggestion">Explain a concept simply</button>' +
+      '<button class="suggestion">Write or review code</button>' +
+      '<button class="suggestion">Help me debug a problem</button>' +
+      '<button class="suggestion">Help with writing or editing</button>' +
+      '</div></div>';
+    document.querySelectorAll('.suggestion').forEach(btn => {
+      btn.addEventListener('click', () => sendMessage(btn.textContent.trim()));
+    });
   }
   await loadConversations();
 }
