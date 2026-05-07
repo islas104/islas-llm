@@ -204,7 +204,7 @@ async function openConversation(convId) {
 function renderConversation(data) {
   const container = document.getElementById('messages');
   container.innerHTML = '';
-  document.getElementById('empty-state').remove?.();
+  document.getElementById('empty-state')?.remove();
 
   data.messages.forEach(m => {
     const bubble = addMessageEl(m.role, m.id);
