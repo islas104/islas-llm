@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Forge</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="sidebar">
+    <div class="logo">⚡ Forge</div>
+    <button id="new-chat" onclick="newChat()">+ New Chat</button>
+    <div id="history"></div>
+  </div>
+
+  <div class="main">
+    <div id="messages" class="messages"></div>
+
+    <div class="input-bar">
+      <textarea
+        id="input"
+        placeholder="Message Forge..."
+        rows="1"
+        onkeydown="handleKey(event)"
+        oninput="autoResize(this)"
+      ></textarea>
+      <button id="send-btn" onclick="sendMessage()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
