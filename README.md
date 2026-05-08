@@ -1,41 +1,48 @@
-# ⚡ Islas LLM
+# ⚡ Islas AI
 
-A fully custom LLM product built from the ground up — fine-tuned Mistral 7B running locally on Apple Silicon, with a FastAPI backend, WebSocket streaming, persistent conversations, and a polished chat UI.
+A fully custom AI chat product built from the ground up — Mistral 7B running locally on Apple Silicon, served publicly at **[islas-ai.com](https://islas-ai.com)** via Cloudflare Tunnel with CI/CD auto-deploy on every push.
 
 ---
 
-![Islas LLM – Empty State](screenshots/ui.png)
+![Islas AI – Empty State](screenshots/ui.png)
 
-![Islas LLM – Chat View](screenshots/ui-chat.png)
+![Islas AI – Chat View](screenshots/ui-chat.png)
 
 ---
 
 ## Features
 
-- **Local inference** — Mistral 7B Instruct (4-bit) via Apple MLX on-device, no API costs
+- **Local inference** — Mistral 7B Instruct (4-bit) via Apple MLX, no API costs, runs entirely on-device
 - **WebSocket streaming** — real-time token-by-token responses with auto-reconnect and ping keepalive
-- **Token batching** — tokens are buffered and flushed every 6 tokens or 30 ms, reducing WebSocket frame overhead
+- **Token batching** — tokens buffered and flushed every 6 tokens or 30 ms, reducing frame overhead
 - **KV cache** — per-session KV cache so only new tokens are prefilled each turn
-- **Token-aware context trimming** — oldest messages are dropped to stay within Mistral's 4096-token limit; no silent overflow
-- **Generation timeout** — hung generations are cancelled after 120 s with a clean error message
-- **Persistent conversations** — all chats saved to SQLite (WAL mode, 32 MB page cache, persistent connection)
-- **Startup warm-up** — dummy inference at boot compiles MLX compute graphs so every response has consistent latency
+- **Token-aware context trimming** — oldest messages dropped to stay within Mistral's 4096-token limit
+- **Per-user isolation** — each browser gets its own private chat history via a localStorage user ID, no login required
+- **Persistent conversations** — all chats saved to SQLite (WAL mode, 32 MB page cache)
+- **Startup warm-up** — dummy inference at boot compiles MLX compute graphs for consistent first-response latency
 - **Edit & regenerate** — edit any past message and regenerate from that point
 - **System prompt** — configurable per conversation via the settings panel
 - **Temperature & max tokens** — adjustable per session
-- **Password auth** — optional password protection with scrypt hashing and HTTP-only session cookies
-- **Fine-tuning** — QLoRA fine-tuning script included via HuggingFace PEFT + TRL
-- **Security** — CSP headers, input validation, rate limiting, GZip compression
+- **Export** — download any conversation as a markdown file
+- **Feedback reporting** — in-app issue reporting stored to DB, viewable by the developer
+- **Mobile responsive** — works on iPhone and Android with safe-area insets and virtual keyboard handling
+- **Security** — CSP headers, CORS, GZip, rate limiting, session scoping
+- **CI/CD** — GitHub Actions self-hosted runner auto-deploys to the live server on every push to `main`
+- **Cloudflare Tunnel** — permanently exposed at `islas-ai.com` with no open ports or port forwarding
 
 ## Stack
 
 | Layer | Technology |
-|-------|-----------|
+|-------|------------|
 | Model | Mistral 7B Instruct (4-bit, MLX) |
 | Backend | FastAPI + WebSockets + SQLite |
 | Frontend | Vanilla JS, marked.js, highlight.js, DOMPurify |
-| Training | HuggingFace Transformers, PEFT, TRL |
-| Platform | Apple Silicon (MLX) |
+| Deployment | Cloudflare Tunnel + GitHub Actions (self-hosted runner) |
+| Platform | Apple Silicon (M-series) |
+
+## Live Demo
+
+**[islas-ai.com](https://islas-ai.com)** — open to anyone, no account required. Each visitor gets their own private conversation history.
 
 ## Quick Start
 
@@ -55,27 +62,23 @@ pip install -r requirements.txt
 cp .env.example .env
 # Add your HuggingFace token to .env
 
-# (Optional) Set a password
-python setup.py
-
 # Run
 python run.py
 ```
 
 Open [http://localhost:8000](http://localhost:8000)
 
-## Fine-tuning
+## Deployment
 
-Prepare a JSONL file where each line has a `text` field:
+The app runs on a local Mac and is exposed publicly via a named Cloudflare Tunnel. Every `git push` to `main` triggers a GitHub Actions self-hosted runner that pulls the latest code, installs dependencies, and restarts the server automatically.
 
-```json
-{"text": "<s>[INST] Your prompt [/INST] Your response </s>"}
+```
+git push origin main  →  GitHub Actions  →  pull + restart  →  islas-ai.com updated
 ```
 
-Then run:
-
+To view user feedback reports:
 ```bash
-python scripts/finetune.py --data data/train.jsonl --output checkpoints/islas-v1
+sqlite3 forge.db "SELECT datetime(created_at/1000, 'unixepoch'), message FROM feedback ORDER BY created_at DESC;"
 ```
 
 ## Project Structure
@@ -85,23 +88,28 @@ islas-llm/
 ├── model/
 │   └── loader.py          # MLX model loading, KV cache, warm-up
 ├── api/
-│   ├── auth.py            # Password auth, session management
-│   ├── db.py              # SQLite — persistent connection, WAL, indexes
+│   ├── auth.py            # Session management, user ID extraction
+│   ├── db.py              # SQLite — WAL, indexes, all DB helpers
 │   ├── main.py            # FastAPI app, middleware, security headers
 │   └── routes/
 │       ├── chat.py        # WebSocket handler — streaming, token batching, timeout
 │       ├── conversations.py
+│       ├── feedback.py    # In-app issue reporting
 │       └── auth_routes.py
 ├── ui/
 │   ├── index.html         # Chat interface
 │   ├── login.html         # Auth page
-│   ├── app.js             # WebSocket client, markdown rendering, mobile sidebar
-│   └── style.css          # Dark theme with gradient accents
-├── screenshots/           # UI screenshots
+│   ├── app.js             # WebSocket client, markdown rendering, feedback modal
+│   ├── login.js           # Login form logic
+│   └── style.css          # Dark theme, gradient accents, mobile-responsive
+├── .github/
+│   └── workflows/
+│       └── deploy.yml     # CI/CD — auto-deploy on push to main
+├── screenshots/
 ├── scripts/
 │   └── finetune.py        # QLoRA fine-tuning
-├── setup.py               # First-run auth setup
-├── run.py                 # Start the server
+├── setup.py               # First-run password setup
+├── run.py                 # Server entrypoint
 └── .env.example
 ```
 
@@ -112,10 +120,11 @@ islas-llm/
 | `MODEL_ID` | HuggingFace model ID | `mlx-community/Mistral-7B-Instruct-v0.3-4bit` |
 | `HF_TOKEN` | HuggingFace access token | — |
 | `PORT` | Server port | `8000` |
-| `PASSWORD_HASH` | scrypt password hash (run `setup.py`) | — |
+| `PASSWORD_HASH` | scrypt hash (run `setup.py`) — optional | — |
 | `MAX_NEW_TOKENS` | Max tokens per response | `512` |
 | `TEMPERATURE` | Default sampling temperature | `0.7` |
 | `MAX_CONTENT_LEN` | Max characters per user message | `8000` |
+| `ALLOWED_ORIGINS` | CORS allowed origins | `http://localhost:8000` |
 
 ---
 
