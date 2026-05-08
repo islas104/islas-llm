@@ -20,7 +20,9 @@ jobs:
 
       - name: Restart server
         run: |
-          launchctl unload ~/Library/LaunchAgents/com.islas.llm.plist
+          launchctl unload ~/Library/LaunchAgents/com.islas.llm.plist || true
+          lsof -ti :8000 | xargs kill -9 2>/dev/null || true
+          until ! lsof -ti :8000 > /dev/null 2>&1; do sleep 1; done
           launchctl load ~/Library/LaunchAgents/com.islas.llm.plist
 
       - name: Health check

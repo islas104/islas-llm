@@ -23,7 +23,7 @@ _CSP = (
     "default-src 'self'; "
     "script-src 'self' https://cdn.jsdelivr.net; "
     "style-src 'self' https://cdn.jsdelivr.net; "
-    "connect-src 'self' ws: wss:; "
+    "connect-src 'self' ws: wss: https://cdn.jsdelivr.net; "
     "img-src 'self' data:; "
     "font-src 'self' https://cdn.jsdelivr.net;"
 )
