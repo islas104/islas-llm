@@ -1,0 +1,29 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest code
+        run: |
+          cd /Users/ianawaz/Desktop/forge-llm
+          git pull origin main
+
+      - name: Install dependencies
+        run: |
+          cd /Users/ianawaz/Desktop/forge-llm
+          .venv/bin/pip install -r requirements.txt --quiet
+
+      - name: Restart server
+        run: |
+          launchctl unload ~/Library/LaunchAgents/com.islas.llm.plist
+          launchctl load ~/Library/LaunchAgents/com.islas.llm.plist
+
+      - name: Health check
+        run: |
+          sleep 10
+          curl -sf http://localhost:8000/api/health | grep '"status":"ok"'
