@@ -6,7 +6,7 @@ from threading import Thread
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from api import db
-from api.auth import is_authenticated
+from api.auth import is_authenticated, get_session_token
 from model.loader import get_model_and_tokenizer, make_cache
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ async def ws_chat(websocket: WebSocket, conversation_id: str):
         await websocket.close(code=4401)
         return
 
-    conv = await db.get_conversation(conversation_id)
+    conv = await db.get_conversation(conversation_id, get_session_token(websocket))
     if not conv:
         await websocket.send_json({"type": "error", "message": "Conversation not found"})
         await websocket.close()

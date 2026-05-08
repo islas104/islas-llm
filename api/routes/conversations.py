@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from api import db
+from api.auth import get_session_token
 
 router = APIRouter()
+_NOT_FOUND = "Not found"
 
 
 class CreateBody(BaseModel):
@@ -17,28 +19,29 @@ class UpdateBody(BaseModel):
 
 
 @router.get("")
-async def list_convs():
-    return await db.list_conversations()
+async def list_convs(request: Request):
+    return await db.list_conversations(get_session_token(request))
 
 
 @router.post("")
-async def create_conv(body: CreateBody):
-    return await db.create_conversation(body.title, body.system_prompt)
+async def create_conv(request: Request, body: CreateBody):
+    return await db.create_conversation(get_session_token(request), body.title, body.system_prompt)
 
 
 @router.get("/{cid}")
-async def get_conv(cid: str):
-    conv = await db.get_conversation(cid)
+async def get_conv(cid: str, request: Request):
+    conv = await db.get_conversation(cid, get_session_token(request))
     if not conv:
-        raise HTTPException(404, "Not found")
+        raise HTTPException(404, _NOT_FOUND)
     messages = await db.get_messages(cid)
     return {**conv, "messages": messages}
 
 
 @router.patch("/{cid}")
-async def update_conv(cid: str, body: UpdateBody):
-    if not await db.get_conversation(cid):
-        raise HTTPException(404, "Not found")
+async def update_conv(cid: str, request: Request, body: UpdateBody):
+    token = get_session_token(request)
+    if not await db.get_conversation(cid, token):
+        raise HTTPException(404, _NOT_FOUND)
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if updates:
         await db.update_conversation(cid, **updates)
@@ -46,12 +49,15 @@ async def update_conv(cid: str, body: UpdateBody):
 
 
 @router.delete("/{cid}")
-async def delete_conv(cid: str):
-    await db.delete_conversation(cid)
+async def delete_conv(cid: str, request: Request):
+    await db.delete_conversation(cid, get_session_token(request))
     return {"ok": True}
 
 
 @router.delete("/{cid}/messages/{mid}/from")
-async def truncate_from(cid: str, mid: str):
+async def truncate_from(cid: str, mid: str, request: Request):
+    token = get_session_token(request)
+    if not await db.get_conversation(cid, token):
+        raise HTTPException(404, _NOT_FOUND)
     await db.truncate_from_message(cid, mid)
     return {"ok": True}

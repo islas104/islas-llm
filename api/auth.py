@@ -34,8 +34,12 @@ def revoke_session(token: str) -> None:
     _sessions.discard(token)
 
 
+def get_session_token(conn: HTTPConnection) -> str:
+    return conn.cookies.get("forge_session", "")
+
+
 def is_authenticated(conn: HTTPConnection) -> bool:
     if not os.getenv("PASSWORD_HASH"):
         return True
-    token = conn.cookies.get("forge_session", "")
+    token = get_session_token(conn)
     return bool(token and token in _sessions)
