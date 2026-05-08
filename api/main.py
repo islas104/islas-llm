@@ -86,10 +86,12 @@ async def unhandled(_: Request, _exc: Exception):
 from api.routes.auth_routes import router as auth_router
 from api.routes.chat import router as chat_router
 from api.routes.conversations import router as conv_router
+from api.routes.feedback import router as feedback_router
 
 app.include_router(auth_router, prefix="/api/auth")
 app.include_router(chat_router, prefix="/api")
 app.include_router(conv_router, prefix="/api/conversations")
+app.include_router(feedback_router, prefix="/api/feedback")
 app.mount("/static", StaticFiles(directory="ui"), name="static")
 
 

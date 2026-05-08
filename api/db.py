@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS feedback (
+    id         TEXT PRIMARY KEY,
+    message    TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
 """
 
 _SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000  # 7 days
@@ -162,6 +168,14 @@ async def add_message(cid: str, role: str, content: str) -> dict:
     await _db.commit()
     return {"id": mid, "conversation_id": cid, "role": role,
             "content": content, "created_at": now}
+
+
+async def save_feedback(message: str) -> None:
+    await _db.execute(
+        "INSERT INTO feedback VALUES (?,?,?)",
+        (str(uuid.uuid4()), message, _now()),
+    )
+    await _db.commit()
 
 
 async def truncate_from_message(cid: str, message_id: str) -> None:

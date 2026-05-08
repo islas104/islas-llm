@@ -33,6 +33,7 @@
       <input type="text" id="conv-search" placeholder="Search conversations…" autocomplete="off" />
     </div>
     <div id="conv-list" class="conv-list"></div>
+    <button id="feedback-btn" class="feedback-sidebar-btn">⚑ Report an issue</button>
     <button id="logout-btn" class="logout-btn">Sign out</button>
   </aside>
 
@@ -88,6 +89,21 @@
   </main>
 
   <div id="mobile-overlay" class="mobile-overlay"></div>
+
+  <!-- Feedback modal -->
+  <dialog id="feedback-modal" class="feedback-modal" aria-label="Report an issue">
+    <div class="feedback-header">
+      <span>Report an issue</span>
+      <button id="close-feedback-btn">✕</button>
+    </div>
+    <div class="feedback-body">
+      <label for="feedback-text">Describe what went wrong</label>
+      <textarea id="feedback-text" rows="5" placeholder="e.g. The page went blank after sending a message…"></textarea>
+    </div>
+    <div class="feedback-footer">
+      <button id="submit-feedback-btn" class="btn-primary">Send report</button>
+    </div>
+  </div>
 
   <!-- Settings panel -->
   <div id="settings-overlay" class="overlay hidden"></div>

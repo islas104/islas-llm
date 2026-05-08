@@ -106,22 +106,28 @@ const _wsHandlers = {
     scrollToBottom();
   },
   done(data) {
-    if (state.activeBubble) {
-      const wrap = state.activeBubble.closest('.message');
-      if (wrap) wrap.dataset.msgId = data.message.id;
-      finaliseAssistantMessage(state.activeBubble);
+    try {
+      if (state.activeBubble) {
+        const wrap = state.activeBubble.closest('.message');
+        if (wrap && data.message) wrap.dataset.msgId = data.message.id;
+        finaliseAssistantMessage(state.activeBubble);
+      }
+    } finally {
+      endGeneration();
     }
-    endGeneration();
   },
   title_updated(data) {
     updateSidebarTitle(state.convId, data.title);
   },
   error(data) {
-    if (state.activeBubble) {
-      state.activeBubble.textContent = data.message;
-      state.activeBubble.classList.add('error');
+    try {
+      if (state.activeBubble) {
+        state.activeBubble.textContent = data.message;
+        state.activeBubble.classList.add('error');
+      }
+    } finally {
+      endGeneration();
     }
-    endGeneration();
   },
 };
 
@@ -661,6 +667,32 @@ function init() {
     mobileOverlay.classList.toggle('visible');
   });
   mobileOverlay?.addEventListener('click', closeMobileSidebar);
+
+  // Feedback
+  const feedbackModal = document.getElementById('feedback-modal');
+  document.getElementById('feedback-btn').addEventListener('click', () => {
+    document.getElementById('feedback-text').value = '';
+    feedbackModal.showModal();
+  });
+  document.getElementById('close-feedback-btn').addEventListener('click', () => feedbackModal.close());
+  feedbackModal.addEventListener('click', e => { if (e.target === feedbackModal) feedbackModal.close(); });
+  document.getElementById('submit-feedback-btn').addEventListener('click', async () => {
+    const text = document.getElementById('feedback-text').value.trim();
+    if (!text) return;
+    const btn = document.getElementById('submit-feedback-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try {
+      await apiFetch('/api/feedback', { method: 'POST', json: { message: text } });
+      feedbackModal.close();
+      setStatus('Report sent — thank you!', true);
+    } catch {
+      setStatus('Failed to send report', false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send report';
+    }
+  });
 
   loadConversations();
   input.focus();
