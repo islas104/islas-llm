@@ -24,6 +24,7 @@
 body {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
@@ -777,7 +778,20 @@ input[type="range"]::-webkit-slider-thumb {
   }
   .sidebar.open { transform: translateX(0); }
   .mobile-header { display: flex; }
-  .messages { padding: 16px; }
-  .input-area { padding: 10px 12px 12px; }
+  .messages { padding: 12px 14px 8px; gap: 20px; }
+  .input-area {
+    padding: 8px 10px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .input-bar { gap: 8px; }
+  .input-bar textarea { font-size: 16px; } /* prevent iOS auto-zoom */
+  .message.user .bubble { max-width: 90%; }
+  .empty-state { padding: 30px 16px; }
+  .empty-logo { font-size: 2.5rem; }
+  .empty-title { font-size: 1.3rem; }
+  .suggestions { flex-direction: column; gap: 8px; width: 100%; }
+  .suggestion { width: 100%; text-align: left; }
   .settings-panel { width: 100%; }
+  .scroll-btn { right: 12px; bottom: 80px; }
+  #send-btn, #stop-btn { min-width: 40px; min-height: 40px; }
 }
