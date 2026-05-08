@@ -162,6 +162,7 @@ function makeConvItem(conv) {
   const title = document.createElement('span');
   title.className = 'conv-title';
   title.textContent = conv.title;
+  title.title = 'Double-click to rename';
 
   const time = document.createElement('span');
   time.className = 'conv-time';
@@ -176,9 +177,42 @@ function makeConvItem(conv) {
   del.textContent = '✕';
   del.addEventListener('click', e => { e.stopPropagation(); deleteConversation(conv.id); });
 
+  // Inline rename on double-click
+  title.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    title.contentEditable = 'true';
+    title.focus();
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  });
+
+  title.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); title.blur(); }
+    if (e.key === 'Escape') { title.textContent = conv.title; title.blur(); }
+  });
+
+  title.addEventListener('blur', async () => {
+    if (title.contentEditable !== 'true') return;
+    title.contentEditable = 'false';
+    const newTitle = title.textContent.trim() || conv.title;
+    title.textContent = newTitle;
+    if (newTitle !== conv.title) {
+      conv.title = newTitle;
+      await apiFetch(`/api/conversations/${conv.id}`, {
+        method: 'PATCH', json: { title: newTitle },
+      });
+    }
+  });
+
   item.appendChild(meta);
   item.appendChild(del);
-  item.addEventListener('click', () => openConversation(conv.id));
+  item.addEventListener('click', () => {
+    if (title.contentEditable === 'true') return;
+    openConversation(conv.id);
+  });
   return item;
 }
 

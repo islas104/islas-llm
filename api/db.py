@@ -33,7 +33,14 @@ CREATE INDEX IF NOT EXISTS idx_messages_conv
 
 CREATE INDEX IF NOT EXISTS idx_conversations_updated
     ON conversations(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL
+);
 """
+
+_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000  # 7 days
 
 
 async def init_db() -> None:
@@ -44,6 +51,24 @@ async def init_db() -> None:
     await _db.execute("PRAGMA synchronous=NORMAL")
     await _db.execute("PRAGMA cache_size=-32000")
     await _db.execute("PRAGMA temp_store=MEMORY")
+    # Purge expired sessions on startup
+    cutoff = int(time.time() * 1000) - _SESSION_TTL_MS
+    await _db.execute("DELETE FROM sessions WHERE created_at < ?", (cutoff,))
+    await _db.commit()
+
+
+async def load_sessions() -> list[str]:
+    async with _db.execute("SELECT token FROM sessions") as cur:
+        return [r[0] for r in await cur.fetchall()]
+
+
+async def save_session(token: str) -> None:
+    await _db.execute("INSERT OR REPLACE INTO sessions VALUES (?, ?)", (token, _now()))
+    await _db.commit()
+
+
+async def delete_session(token: str) -> None:
+    await _db.execute("DELETE FROM sessions WHERE token=?", (token,))
     await _db.commit()
 
 

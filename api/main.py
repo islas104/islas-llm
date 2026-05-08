@@ -38,9 +38,11 @@ _SECURITY_HEADERS = {
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     import asyncio
-    from api.db import init_db, close_db
+    from api.db import init_db, close_db, load_sessions
+    from api.auth import _sessions
     from model.loader import load_model
     await init_db()
+    _sessions.update(await load_sessions())
     await asyncio.to_thread(load_model)
     yield
     await close_db()
