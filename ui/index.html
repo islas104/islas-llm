@@ -28,6 +28,9 @@
         </button>
       </div>
     </div>
+    <div class="search-wrap">
+      <input type="text" id="conv-search" placeholder="Search conversations…" autocomplete="off" />
+    </div>
     <div id="conv-list" class="conv-list"></div>
     <button id="logout-btn" class="logout-btn">Sign out</button>
   </aside>
@@ -71,8 +74,16 @@
           </button>
         </div>
       </div>
-      <div class="input-hint">Enter to send · Shift+Enter for new line</div>
+      <div class="input-meta">
+        <span class="input-hint">⌘K new chat · ⌘/ search</span>
+        <span id="char-count" class="char-count hidden"></span>
+      </div>
     </div>
+    <button id="scroll-btn" class="scroll-btn hidden" title="Scroll to bottom">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M12 5v14M5 12l7 7 7-7"/>
+      </svg>
+    </button>
   </main>
 
   <div id="mobile-overlay" class="mobile-overlay"></div>
@@ -100,6 +111,7 @@
       </div>
     </div>
     <div class="settings-footer">
+      <button id="export-btn" class="btn-secondary">↓ Export chat</button>
       <button id="save-settings-btn" class="btn-primary">Save</button>
     </div>
   </aside>

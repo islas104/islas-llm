@@ -130,6 +130,15 @@ function handleWsEvent(data) {
 }
 
 // ── Conversations ─────────────────────────────────────────────────────────────
+function relativeTime(ms) {
+  const d = Date.now() - ms;
+  if (d < 60_000)      return 'just now';
+  if (d < 3_600_000)   return `${Math.floor(d / 60_000)}m ago`;
+  if (d < 86_400_000)  return `${Math.floor(d / 3_600_000)}h ago`;
+  if (d < 604_800_000) return `${Math.floor(d / 86_400_000)}d ago`;
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 async function loadConversations() {
   const convs = await apiFetch('/api/conversations');
   renderSidebar(convs);
@@ -139,6 +148,7 @@ function renderSidebar(convs) {
   const list = document.getElementById('conv-list');
   list.innerHTML = '';
   convs.forEach(c => list.appendChild(makeConvItem(c)));
+  applySearch(document.getElementById('conv-search')?.value ?? '');
 }
 
 function makeConvItem(conv) {
@@ -146,9 +156,19 @@ function makeConvItem(conv) {
   item.className = 'conv-item' + (conv.id === state.convId ? ' active' : '');
   item.dataset.id = conv.id;
 
+  const meta = document.createElement('div');
+  meta.className = 'conv-meta';
+
   const title = document.createElement('span');
   title.className = 'conv-title';
   title.textContent = conv.title;
+
+  const time = document.createElement('span');
+  time.className = 'conv-time';
+  time.textContent = relativeTime(conv.updated_at);
+
+  meta.appendChild(title);
+  meta.appendChild(time);
 
   const del = document.createElement('button');
   del.className = 'conv-delete';
@@ -156,10 +176,18 @@ function makeConvItem(conv) {
   del.textContent = '✕';
   del.addEventListener('click', e => { e.stopPropagation(); deleteConversation(conv.id); });
 
-  item.appendChild(title);
+  item.appendChild(meta);
   item.appendChild(del);
   item.addEventListener('click', () => openConversation(conv.id));
   return item;
+}
+
+function applySearch(query) {
+  const q = query.toLowerCase().trim();
+  document.querySelectorAll('.conv-item').forEach(item => {
+    const title = item.querySelector('.conv-title').textContent.toLowerCase();
+    item.classList.toggle('hidden', q.length > 0 && !title.includes(q));
+  });
 }
 
 function updateSidebarTitle(convId, title) {
@@ -447,7 +475,31 @@ async function saveSettings() {
 // ── Scroll ───────────────────────────────────────────────────────────────────
 function scrollToBottom(force = false) {
   const el = document.getElementById('messages');
-  if (force || !state.userScrolled) el.scrollTop = el.scrollHeight;
+  if (force || !state.userScrolled) {
+    el.scrollTop = el.scrollHeight;
+    document.getElementById('scroll-btn')?.classList.remove('visible');
+    state.userScrolled = false;
+  }
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────
+function exportConversation() {
+  const msgs = [...document.querySelectorAll('#messages .message')];
+  if (!msgs.length) return;
+  const title = document.querySelector('.conv-item.active .conv-title')?.textContent || 'conversation';
+  const lines = [`# ${title}`, ''];
+  msgs.forEach(m => {
+    const isUser = m.classList.contains('user');
+    const bubble = m.querySelector('.bubble');
+    const content = (isUser ? bubble.textContent : (bubble._raw || bubble.innerText)).trim();
+    lines.push(`**${isUser ? 'You' : 'Islas LLM'}**`, '', content, '');
+  });
+  const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = title.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 50) + '.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -480,7 +532,18 @@ function init() {
       if (text) { input.value = ''; input.style.height = 'auto'; sendMessage(text); }
     }
   });
-  input.addEventListener('input', () => autoResize(input));
+  input.addEventListener('input', () => {
+    autoResize(input);
+    const len = input.value.length;
+    const counter = document.getElementById('char-count');
+    if (len > 0) {
+      counter.textContent = `${len.toLocaleString()} / 8,000`;
+      counter.classList.toggle('over', len > 8000);
+      counter.classList.remove('hidden');
+    } else {
+      counter.classList.add('hidden');
+    }
+  });
 
   document.getElementById('send-btn').addEventListener('click', () => {
     const text = input.value.trim();
@@ -502,8 +565,8 @@ function init() {
   });
 
   messages.addEventListener('scroll', () => {
-    const el = messages;
-    state.userScrolled = el.scrollHeight - el.scrollTop - el.clientHeight > 80;
+    state.userScrolled = messages.scrollHeight - messages.scrollTop - messages.clientHeight > 80;
+    document.getElementById('scroll-btn').classList.toggle('visible', state.userScrolled);
   });
 
   // Copy code blocks via event delegation
@@ -520,6 +583,27 @@ function init() {
   // Suggested prompts
   document.querySelectorAll('.suggestion').forEach(btn => {
     btn.addEventListener('click', () => sendMessage(btn.textContent.trim()));
+  });
+
+  // Search
+  document.getElementById('conv-search').addEventListener('input', e => {
+    applySearch(e.target.value);
+  });
+
+  // Export
+  document.getElementById('export-btn').addEventListener('click', exportConversation);
+
+  // Scroll to bottom
+  document.getElementById('scroll-btn').addEventListener('click', () => scrollToBottom(true));
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key === 'k') { e.preventDefault(); newConversation(); }
+    if (mod && e.key === '/') { e.preventDefault(); document.getElementById('conv-search').focus(); }
+    if (e.key === 'Escape' && !document.getElementById('settings-panel').classList.contains('hidden')) {
+      closeSettings();
+    }
   });
 
   // Mobile sidebar toggle
