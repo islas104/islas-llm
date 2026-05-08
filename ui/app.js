@@ -58,7 +58,7 @@ function connectWs(convId) {
   _wsQueue = [];
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/api/ws/${convId}`);
+  const ws = new WebSocket(`${proto}://${location.host}/api/ws/${convId}?uid=${USER_ID}`);
   state.ws = ws;
 
   ws.onopen = () => {
@@ -536,12 +536,21 @@ function exportConversation() {
   URL.revokeObjectURL(a.href);
 }
 
+// ── User identity ─────────────────────────────────────────────────────────────
+const USER_ID = (() => {
+  let id = localStorage.getItem('islas_user_id');
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem('islas_user_id', id); }
+  return id;
+})();
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 async function apiFetch(url, opts = {}) {
   const { method = 'GET', json } = opts;
+  const headers = { 'X-User-ID': USER_ID };
+  if (json) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, {
     method,
-    headers: json ? { 'Content-Type': 'application/json' } : {},
+    headers,
     body: json ? JSON.stringify(json) : undefined,
   });
   if (res.status === 401) { location.href = '/login'; return null; }

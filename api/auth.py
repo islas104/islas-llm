@@ -35,11 +35,15 @@ def revoke_session(token: str) -> None:
 
 
 def get_session_token(conn: HTTPConnection) -> str:
+    # Prefer the browser-generated user ID sent as a header or query param
+    uid = conn.headers.get("x-user-id") or conn.query_params.get("uid")
+    if uid:
+        return uid
     return conn.cookies.get("forge_session", "")
 
 
 def is_authenticated(conn: HTTPConnection) -> bool:
     if not os.getenv("PASSWORD_HASH"):
         return True
-    token = get_session_token(conn)
+    token = conn.cookies.get("forge_session", "")
     return bool(token and token in _sessions)

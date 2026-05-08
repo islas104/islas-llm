@@ -54,7 +54,7 @@ app = FastAPI(title="Islas LLM", version="0.2.0", lifespan=lifespan,
 _origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8000").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=_origins,
                    allow_methods=["GET", "POST", "PATCH", "DELETE"],
-                   allow_headers=["Content-Type"])
+                   allow_headers=["Content-Type", "X-User-ID"])
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
