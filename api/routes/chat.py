@@ -4,6 +4,7 @@ import os
 from threading import Thread
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from api import db
 from api.auth import is_authenticated, get_session_token
@@ -22,6 +23,15 @@ FLUSH_INTERVAL = 0.03      # seconds — flush partial buffer if no token arrive
 GENERATION_TIMEOUT = 120   # seconds before a hung generation is cancelled
 
 _generation_lock = asyncio.Lock()
+
+
+async def _safe_send(websocket: WebSocket, data: dict) -> None:
+    """Send JSON on a WebSocket, silently dropping if the connection is already closed."""
+    if websocket.client_state == WebSocketState.CONNECTED:
+        try:
+            await websocket.send_json(data)
+        except Exception:
+            pass
 
 
 def _parse_request(data: dict) -> dict | None:
@@ -144,7 +154,7 @@ async def _handle_message(
 ) -> tuple[dict, any]:
     req = _parse_request(data)
     if req is None:
-        await websocket.send_json({"type": "error", "message": "Invalid content"})
+        await _safe_send(websocket, {"type": "error", "message": "Invalid content"})
         return conv, kv_cache
 
     if req["truncate_from_id"]:
@@ -152,7 +162,7 @@ async def _handle_message(
         kv_cache = make_cache()
 
     user_msg = await db.add_message(conversation_id, "user", req["content"])
-    await websocket.send_json({"type": "message_saved", "message": user_msg})
+    await _safe_send(websocket, {"type": "message_saved", "message": user_msg})
 
     history = await db.get_messages(conversation_id)
     prompt, was_trimmed = _build_prompt(history, conv.get("system_prompt", ""))
@@ -174,11 +184,11 @@ async def _handle_message(
         except asyncio.TimeoutError:
             stop_event.set()
             logger.warning("Generation timed out in %s", conversation_id)
-            await websocket.send_json({"type": "error", "message": "Generation timed out"})
+            await _safe_send(websocket, {"type": "error", "message": "Generation timed out"})
             return conv, make_cache()  # reset — thread may still be writing to old cache
         except Exception:
             logger.exception("Generation error in %s", conversation_id)
-            await websocket.send_json({"type": "error", "message": "Generation failed"})
+            await _safe_send(websocket, {"type": "error", "message": "Generation failed"})
             return conv, make_cache()  # reset — cache state is unknown after an error
 
     if full_response:
@@ -188,9 +198,9 @@ async def _handle_message(
             new_title = req["content"][:50] + ("…" if len(req["content"]) > 50 else "")
             await db.update_conversation(conversation_id, title=new_title)
             conv = {**conv, "title": new_title}
-            await websocket.send_json({"type": "title_updated", "title": new_title})
+            await _safe_send(websocket, {"type": "title_updated", "title": new_title})
 
-        await websocket.send_json({"type": "done", "message": asst_msg})
+        await _safe_send(websocket, {"type": "done", "message": asst_msg})
 
     return conv, kv_cache
 
@@ -206,7 +216,7 @@ async def ws_chat(websocket: WebSocket, conversation_id: str):
 
     conv = await db.get_conversation(conversation_id, get_session_token(websocket))
     if not conv:
-        await websocket.send_json({"type": "error", "message": "Conversation not found"})
+        await _safe_send(websocket, {"type": "error", "message": "Conversation not found"})
         await websocket.close()
         return
 
