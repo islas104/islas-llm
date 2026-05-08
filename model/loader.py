@@ -27,7 +27,9 @@ def _warmup() -> None:
     from mlx_lm.sample_utils import make_sampler
     logger.info("Warming up model...")
     sampler = make_sampler(temp=0.0)
-    deque(stream_generate(_model, _tokenizer, "Hi", max_tokens=1, sampler=sampler), maxlen=0)
+    # 32 tokens exercises the sampler, longer context paths, and token-selection
+    # graph — reducing first-response latency spikes beyond what 1 token covers
+    deque(stream_generate(_model, _tokenizer, "Hello", max_tokens=32, sampler=sampler), maxlen=0)
     logger.info("Warm-up complete")
 
 

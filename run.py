@@ -11,5 +11,6 @@ if __name__ == "__main__":
         port=int(os.getenv("PORT", "8000")),
         workers=1,
         timeout_keep_alive=30,
-        access_log=True,
+        log_level="warning",
+        access_log=False,
     )

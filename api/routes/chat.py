@@ -175,11 +175,11 @@ async def _handle_message(
             stop_event.set()
             logger.warning("Generation timed out in %s", conversation_id)
             await websocket.send_json({"type": "error", "message": "Generation timed out"})
-            return conv, kv_cache
+            return conv, make_cache()  # reset — thread may still be writing to old cache
         except Exception:
             logger.exception("Generation error in %s", conversation_id)
             await websocket.send_json({"type": "error", "message": "Generation failed"})
-            return conv, kv_cache
+            return conv, make_cache()  # reset — cache state is unknown after an error
 
     if full_response:
         asst_msg = await db.add_message(conversation_id, "assistant", full_response)
