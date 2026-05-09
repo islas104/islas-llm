@@ -732,6 +732,27 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .suggestion:hover::before { opacity: 1; }
 
+/* ── Conversation skeleton loader ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.conv-skeleton {
+  height: 44px;
+  border-radius: 9px;
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--surface3) 50%, var(--surface2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  margin-bottom: 2px;
+}
+
+/* ── Queued message ── */
+.queued-msg {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.88rem;
+}
+
 /* ── Feedback button ── */
 .feedback-sidebar-btn {
   width: 100%;

@@ -93,6 +93,11 @@ function wsSend(data) {
 }
 
 const _wsHandlers = {
+  queued(data) {
+    if (state.activeBubble) {
+      state.activeBubble.innerHTML = `<span class="queued-msg">${data.message}</span>`;
+    }
+  },
   message_saved(data) {
     const wrap = state.activeBubble?.closest('.message');
     if (wrap) wrap.dataset.msgId = data.message.id;
@@ -146,8 +151,10 @@ function relativeTime(ms) {
 }
 
 async function loadConversations() {
+  const list = document.getElementById('conv-list');
+  list.innerHTML = '<div class="conv-skeleton"></div><div class="conv-skeleton"></div><div class="conv-skeleton"></div>';
   const convs = await apiFetch('/api/conversations');
-  renderSidebar(convs);
+  if (convs) renderSidebar(convs);
 }
 
 function renderSidebar(convs) {

@@ -1,0 +1,17 @@
+{
+  "name": "Islas AI",
+  "short_name": "Islas AI",
+  "description": "Personal AI assistant powered by Mistral 7B",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080810",
+  "theme_color": "#ff6b35",
+  "icons": [
+    {
+      "src": "/static/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

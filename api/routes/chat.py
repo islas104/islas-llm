@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import os
+import time
+from collections import defaultdict, deque
 from threading import Thread
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -15,14 +17,29 @@ router = APIRouter()
 
 MAX_CONTENT_LEN = int(os.getenv("MAX_CONTENT_LEN", "8000"))
 MAX_NEW_TOKENS_LIMIT = 2048
-DEFAULT_MAX_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "512"))
+DEFAULT_MAX_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "1024"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 MAX_PROMPT_TOKENS = 3500   # ~500 buffer for response within Mistral's 4096 limit
 TOKEN_BATCH = 6            # tokens to accumulate before each WebSocket send
 FLUSH_INTERVAL = 0.03      # seconds — flush partial buffer if no token arrives within this window
 GENERATION_TIMEOUT = 120   # seconds before a hung generation is cancelled
 
+_MSG_RATE_LIMIT = 10       # max messages per user per minute
+_MSG_WINDOW = 60           # seconds
+
 _generation_lock = asyncio.Lock()
+_user_msg_times: dict[str, deque] = defaultdict(deque)
+
+
+def _is_rate_limited(uid: str) -> bool:
+    now = time.time()
+    q = _user_msg_times[uid]
+    while q and now - q[0] > _MSG_WINDOW:
+        q.popleft()
+    if len(q) >= _MSG_RATE_LIMIT:
+        return True
+    q.append(now)
+    return False
 
 
 async def _safe_send(websocket: WebSocket, data: dict) -> None:
@@ -151,10 +168,15 @@ async def _handle_message(
     kv_cache,
     stop_event: asyncio.Event,
     msg_queue: asyncio.Queue,
+    uid: str = "",
 ) -> tuple[dict, any]:
     req = _parse_request(data)
     if req is None:
         await _safe_send(websocket, {"type": "error", "message": "Invalid content"})
+        return conv, kv_cache
+
+    if uid and _is_rate_limited(uid):
+        await _safe_send(websocket, {"type": "error", "message": "Slow down — you're sending too many messages."})
         return conv, kv_cache
 
     if req["truncate_from_id"]:
@@ -171,6 +193,9 @@ async def _handle_message(
 
     stop_event.clear()
     full_response = ""
+
+    if _generation_lock.locked():
+        await _safe_send(websocket, {"type": "queued", "message": "Another response is finishing up — yours is next…"})
 
     async with _generation_lock:
         try:
@@ -220,6 +245,7 @@ async def ws_chat(websocket: WebSocket, conversation_id: str):
         await websocket.close()
         return
 
+    uid = get_session_token(websocket)
     kv_cache = make_cache()
     msg_queue: asyncio.Queue = asyncio.Queue()
     stop_event = asyncio.Event()
@@ -247,7 +273,7 @@ async def ws_chat(websocket: WebSocket, conversation_id: str):
             elif msg_type == "message":
                 conv, kv_cache = await _handle_message(
                     websocket, data, conversation_id,
-                    conv, kv_cache, stop_event, msg_queue,
+                    conv, kv_cache, stop_event, msg_queue, uid,
                 )
     except WebSocketDisconnect:
         logger.info("Client disconnected: %s", conversation_id)
