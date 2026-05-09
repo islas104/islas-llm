@@ -26,7 +26,7 @@ GENERATION_TIMEOUT = 120   # seconds before a hung generation is cancelled
 
 _MSG_RATE_LIMIT = 10       # max messages per user per minute
 _MSG_WINDOW = 60           # seconds
-_WS_CONN_LIMIT = 10        # max WebSocket connections per IP per minute
+_WS_CONN_LIMIT = 30        # max WebSocket connections per IP per minute
 _WS_CONN_WINDOW = 60
 
 _generation_lock = asyncio.Lock()
@@ -244,16 +244,15 @@ async def _handle_message(
     return conv, kv_cache
 
 
-@router.websocket("/ws/{conversation_id}")
 async def _ws_guard(websocket: WebSocket, conversation_id: str):
-    """Returns (conv, uid) or None if the connection should be rejected."""
+    """Validate an already-accepted WebSocket. Returns (conv, uid) or None."""
     ip = websocket.client.host if websocket.client else "unknown"
     if _is_conn_rate_limited(ip):
-        await websocket.send_json({"type": "error", "message": "Too many connections"})
+        await _safe_send(websocket, {"type": "error", "message": "Too many connections"})
         await websocket.close(code=4429)
         return None
     if not is_authenticated(websocket):
-        await websocket.send_json({"type": "error", "message": "Unauthorised"})
+        await _safe_send(websocket, {"type": "error", "message": "Unauthorised"})
         await websocket.close(code=4401)
         return None
     uid = get_session_token(websocket)
@@ -265,6 +264,7 @@ async def _ws_guard(websocket: WebSocket, conversation_id: str):
     return conv, uid
 
 
+@router.websocket("/ws/{conversation_id}")
 async def ws_chat(websocket: WebSocket, conversation_id: str):
     await websocket.accept()
 
