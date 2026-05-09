@@ -26,9 +26,12 @@ GENERATION_TIMEOUT = 120   # seconds before a hung generation is cancelled
 
 _MSG_RATE_LIMIT = 10       # max messages per user per minute
 _MSG_WINDOW = 60           # seconds
+_WS_CONN_LIMIT = 10        # max WebSocket connections per IP per minute
+_WS_CONN_WINDOW = 60
 
 _generation_lock = asyncio.Lock()
 _user_msg_times: dict[str, deque] = defaultdict(deque)
+_ip_conn_times: dict[str, deque] = defaultdict(deque)
 
 
 def _is_rate_limited(uid: str) -> bool:
@@ -37,6 +40,17 @@ def _is_rate_limited(uid: str) -> bool:
     while q and now - q[0] > _MSG_WINDOW:
         q.popleft()
     if len(q) >= _MSG_RATE_LIMIT:
+        return True
+    q.append(now)
+    return False
+
+
+def _is_conn_rate_limited(ip: str) -> bool:
+    now = time.time()
+    q = _ip_conn_times[ip]
+    while q and now - q[0] > _WS_CONN_WINDOW:
+        q.popleft()
+    if len(q) >= _WS_CONN_LIMIT:
         return True
     q.append(now)
     return False
@@ -231,21 +245,34 @@ async def _handle_message(
 
 
 @router.websocket("/ws/{conversation_id}")
-async def ws_chat(websocket: WebSocket, conversation_id: str):
-    await websocket.accept()
-
+async def _ws_guard(websocket: WebSocket, conversation_id: str):
+    """Returns (conv, uid) or None if the connection should be rejected."""
+    ip = websocket.client.host if websocket.client else "unknown"
+    if _is_conn_rate_limited(ip):
+        await websocket.send_json({"type": "error", "message": "Too many connections"})
+        await websocket.close(code=4429)
+        return None
     if not is_authenticated(websocket):
         await websocket.send_json({"type": "error", "message": "Unauthorised"})
         await websocket.close(code=4401)
-        return
-
-    conv = await db.get_conversation(conversation_id, get_session_token(websocket))
+        return None
+    uid = get_session_token(websocket)
+    conv = await db.get_conversation(conversation_id, uid)
     if not conv:
         await _safe_send(websocket, {"type": "error", "message": "Conversation not found"})
         await websocket.close()
-        return
+        return None
+    return conv, uid
 
-    uid = get_session_token(websocket)
+
+async def ws_chat(websocket: WebSocket, conversation_id: str):
+    await websocket.accept()
+
+    result = await _ws_guard(websocket, conversation_id)
+    if result is None:
+        return
+    conv, uid = result
+
     kv_cache = make_cache()
     msg_queue: asyncio.Queue = asyncio.Queue()
     stop_event = asyncio.Event()

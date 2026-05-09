@@ -46,6 +46,7 @@ async def login(request: Request, password: str = Form(...)):
     resp.set_cookie(
         "forge_session", token,
         httponly=True,
+        secure=True,
         samesite="strict",
         max_age=60 * 60 * 24 * 7,
     )

@@ -19,11 +19,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 _PUBLIC = {"/login", "/api/auth/login", "/api/auth/logout", "/static"}
+_HOST = os.getenv("PUBLIC_HOST", "islas-ai.com")
 _CSP = (
     "default-src 'self'; "
     "script-src 'self' https://cdn.jsdelivr.net; "
     "style-src 'self' https://cdn.jsdelivr.net; "
-    "connect-src 'self' ws: wss: https://cdn.jsdelivr.net; "
+    f"connect-src 'self' wss://{_HOST} ws://localhost:* https://cdn.jsdelivr.net; "
     "img-src 'self' data:; "
     "font-src 'self' https://cdn.jsdelivr.net;"
 )
@@ -32,6 +33,8 @@ _SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Content-Security-Policy": _CSP,
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
 }
 
 

@@ -1,7 +1,10 @@
 import os
+import re
 import hashlib
 import secrets
 from starlette.requests import HTTPConnection
+
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 
 
 _sessions: set[str] = set()
@@ -35,9 +38,8 @@ def revoke_session(token: str) -> None:
 
 
 def get_session_token(conn: HTTPConnection) -> str:
-    # Prefer the browser-generated user ID sent as a header or query param
-    uid = conn.headers.get("x-user-id") or conn.query_params.get("uid")
-    if uid:
+    uid = conn.headers.get("x-user-id") or conn.query_params.get("uid", "")
+    if uid and _UUID_RE.match(uid):
         return uid
     return conn.cookies.get("forge_session", "")
 
