@@ -677,10 +677,12 @@ function init() {
 
   // Feedback
   const feedbackModal = document.getElementById('feedback-modal');
-  document.getElementById('feedback-btn').addEventListener('click', () => {
+  function openFeedbackModal() {
     document.getElementById('feedback-text').value = '';
     feedbackModal.showModal();
-  });
+  }
+  document.getElementById('feedback-btn').addEventListener('click', openFeedbackModal);
+  document.getElementById('mobile-feedback-btn').addEventListener('click', openFeedbackModal);
   document.getElementById('close-feedback-btn').addEventListener('click', () => feedbackModal.close());
   feedbackModal.addEventListener('click', e => { if (e.target === feedbackModal) feedbackModal.close(); });
   document.getElementById('submit-feedback-btn').addEventListener('click', async () => {
