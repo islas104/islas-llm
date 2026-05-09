@@ -26,7 +26,8 @@ A fully custom AI chat product built from the ground up — Mistral 7B running l
 - **Export** — download any conversation as a markdown file
 - **Feedback reporting** — in-app issue reporting stored to DB, viewable by the developer
 - **Mobile responsive** — works on iPhone and Android with safe-area insets and virtual keyboard handling
-- **Security** — CSP headers, CORS, GZip, rate limiting, session scoping
+- **Daily backups** — SQLite database backed up automatically every day, retaining the last 7 snapshots
+- **Security** — HSTS, CSP, CORS, GZip, IP-based rate limiting, UUID-validated user IDs, secure session cookies
 - **CI/CD** — GitHub Actions self-hosted runner auto-deploys to the live server on every push to `main`
 - **Cloudflare Tunnel** — permanently exposed at `islas-ai.com` with no open ports or port forwarding
 
@@ -107,6 +108,7 @@ islas-llm/
 │       └── deploy.yml     # CI/CD — auto-deploy on push to main
 ├── screenshots/
 ├── scripts/
+│   ├── backup.sh          # Daily SQLite backup (run via launchd)
 │   └── finetune.py        # QLoRA fine-tuning
 ├── setup.py               # First-run password setup
 ├── run.py                 # Server entrypoint
@@ -121,7 +123,7 @@ islas-llm/
 | `HF_TOKEN` | HuggingFace access token | — |
 | `PORT` | Server port | `8000` |
 | `PASSWORD_HASH` | scrypt hash (run `setup.py`) — optional | — |
-| `MAX_NEW_TOKENS` | Max tokens per response | `512` |
+| `MAX_NEW_TOKENS` | Max tokens per response | `1024` |
 | `TEMPERATURE` | Default sampling temperature | `0.7` |
 | `MAX_CONTENT_LEN` | Max characters per user message | `8000` |
 | `ALLOWED_ORIGINS` | CORS allowed origins | `http://localhost:8000` |
