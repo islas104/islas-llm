@@ -20,6 +20,13 @@ _FB_LIMIT = 5
 _FB_WINDOW = 300  # 5 per 5 minutes per IP
 
 
+def cleanup_rate_limits() -> None:
+    now = time.time()
+    stale = [k for k, q in _fb_times.items() if not q or now - q[-1] > _FB_WINDOW]
+    for k in stale:
+        del _fb_times[k]
+
+
 def _feedback_rate_limited(ip: str) -> bool:
     now = time.time()
     q = _fb_times[ip]

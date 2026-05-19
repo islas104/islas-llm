@@ -1,5 +1,6 @@
 import os
 import logging
+from logging.handlers import RotatingFileHandler
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -12,10 +13,13 @@ from dotenv import load_dotenv
 from api.auth import is_authenticated
 
 load_dotenv()
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+os.makedirs("logs", exist_ok=True)
+_log_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+_file_handler = RotatingFileHandler("logs/server.log", maxBytes=5 * 1024 * 1024, backupCount=5)
+_file_handler.setFormatter(_log_fmt)
+_stream_handler = logging.StreamHandler()
+_stream_handler.setFormatter(_log_fmt)
+logging.basicConfig(level=logging.INFO, handlers=[_file_handler, _stream_handler])
 logger = logging.getLogger(__name__)
 
 _PUBLIC = {"/login", "/api/auth/login", "/api/auth/logout", "/static"}
@@ -44,10 +48,22 @@ async def lifespan(_app: FastAPI):
     from api.db import init_db, close_db, load_sessions
     from api.auth import _sessions
     from model.loader import load_model
+    from api.routes.chat import cleanup_rate_limits as chat_cleanup
+    from api.routes.feedback import cleanup_rate_limits as feedback_cleanup
+
     await init_db()
     _sessions.update(await load_sessions())
     await asyncio.to_thread(load_model)
+
+    async def _rate_limit_cleaner():
+        while True:
+            await asyncio.sleep(300)
+            chat_cleanup()
+            feedback_cleanup()
+
+    cleaner_task = asyncio.create_task(_rate_limit_cleaner())
     yield
+    cleaner_task.cancel()
     await close_db()
 
 

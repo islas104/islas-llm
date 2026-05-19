@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_CONTENT_LEN = int(os.getenv("MAX_CONTENT_LEN", "8000"))
+_DEFAULT_SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a helpful assistant. Be concise and accurate.")
 MAX_NEW_TOKENS_LIMIT = 2048
 DEFAULT_MAX_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "1024"))
 DEFAULT_TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
@@ -33,6 +34,14 @@ _WS_CONN_WINDOW = 60
 _generation_lock = asyncio.Lock()
 _user_msg_times: dict[str, deque] = defaultdict(deque)
 _ip_conn_times: dict[str, deque] = defaultdict(deque)
+
+
+def cleanup_rate_limits() -> None:
+    now = time.time()
+    for d, window in [(_user_msg_times, _MSG_WINDOW), (_ip_conn_times, _WS_CONN_WINDOW)]:
+        stale = [k for k, q in d.items() if not q or now - q[-1] > window]
+        for k in stale:
+            del d[k]
 
 
 def _is_rate_limited(uid: str) -> bool:
@@ -207,9 +216,6 @@ async def _run_generation(
     conversation_id: str,
 ) -> str | None:
     """Acquire the generation lock and stream a response. Returns full text, or None on failure."""
-    if _generation_lock.locked():
-        await _safe_send(websocket, {"type": "queued", "message": "Another response is finishing up — yours is next…"})
-
     try:
         await asyncio.wait_for(_generation_lock.acquire(), timeout=LOCK_WAIT_TIMEOUT)
     except asyncio.TimeoutError:
@@ -262,7 +268,8 @@ async def _handle_message(
     await _safe_send(websocket, {"type": "message_saved", "message": user_msg})
 
     history = await db.get_messages(conversation_id)
-    prompt, was_trimmed = _build_prompt(history, conv.get("system_prompt", ""))
+    system_prompt = conv.get("system_prompt") or _DEFAULT_SYSTEM_PROMPT
+    prompt, was_trimmed = _build_prompt(history, system_prompt)
     if was_trimmed:
         kv_cache = make_cache()
 
@@ -275,10 +282,7 @@ async def _handle_message(
     asst_msg = await db.add_message(conversation_id, "assistant", full_response)
 
     if conv.get("title") == "New Chat" and len(history) <= 1:
-        new_title = req["content"][:50] + ("…" if len(req["content"]) > 50 else "")
-        await db.update_conversation(conversation_id, title=new_title)
-        conv = {**conv, "title": new_title}
-        await _safe_send(websocket, {"type": "title_updated", "title": new_title})
+        _fire(_generate_title(websocket, conversation_id, req["content"], full_response))
 
     await _safe_send(websocket, {"type": "done", "message": asst_msg})
     return conv, kv_cache
@@ -304,7 +308,57 @@ async def _ws_guard(websocket: WebSocket, conversation_id: str):
     return conv, uid
 
 
-async def _prefill_history(conv: dict, kv_cache, stop_event: asyncio.Event) -> None:
+_background_tasks: set = set()
+
+
+def _fire(coro) -> None:
+    t = asyncio.create_task(coro)
+    _background_tasks.add(t)
+    t.add_done_callback(_background_tasks.discard)
+
+
+async def _generate_title(websocket: WebSocket, conversation_id: str, user_content: str, asst_content: str) -> None:
+    """Generate a short title using the model after the first exchange."""
+    from mlx_lm import stream_generate
+    from mlx_lm.sample_utils import make_sampler
+
+    model, tokenizer = get_model_and_tokenizer()
+    messages = [{"role": "user", "content": (
+        "Write a title of 5 words or fewer for this conversation. "
+        "Reply with only the title — no punctuation, no quotes.\n\n"
+        f"User: {user_content[:300]}\nAssistant: {asst_content[:300]}"
+    )}]
+    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    gen_kwargs = {
+        "model": model, "tokenizer": tokenizer,
+        "prompt": prompt, "max_tokens": 12,
+        "sampler": make_sampler(temp=0.3),
+    }
+
+    try:
+        await asyncio.wait_for(_generation_lock.acquire(), timeout=30)
+    except asyncio.TimeoutError:
+        return
+
+    try:
+        parts: list[str] = []
+        def _run():
+            for resp in stream_generate(**gen_kwargs):
+                parts.append(resp.text)
+        await asyncio.to_thread(_run)
+    except Exception:
+        return
+    finally:
+        _generation_lock.release()
+
+    title = "".join(parts).strip().strip("\"'").strip()[:60]
+    if not title:
+        return
+    await db.update_conversation(conversation_id, title=title)
+    await _safe_send(websocket, {"type": "title_updated", "title": title})
+
+
+async def _prefill_history(conv: dict, kv_cache) -> None:
     """Pre-warm the KV cache with existing history so the first response has no prefill delay."""
     history = await db.get_messages(conv["id"])
     if not history:
@@ -313,7 +367,8 @@ async def _prefill_history(conv: dict, kv_cache, stop_event: asyncio.Event) -> N
     from mlx_lm import stream_generate
     from mlx_lm.sample_utils import make_sampler
 
-    prompt, _ = _build_prompt(history, conv.get("system_prompt", ""))
+    system_prompt = conv.get("system_prompt") or _DEFAULT_SYSTEM_PROMPT
+    prompt, _ = _build_prompt(history, system_prompt)
     model, tokenizer = get_model_and_tokenizer()
     gen_kwargs = {
         "model": model, "tokenizer": tokenizer,
@@ -323,9 +378,9 @@ async def _prefill_history(conv: dict, kv_cache, stop_event: asyncio.Event) -> N
     }
 
     try:
-        await asyncio.wait_for(_generation_lock.acquire(), timeout=15)
+        await asyncio.wait_for(_generation_lock.acquire(), timeout=0.5)
     except asyncio.TimeoutError:
-        return
+        return  # Model is busy — skip prefill; first message will prefill naturally
 
     try:
         def _run():
@@ -351,7 +406,7 @@ async def ws_chat(websocket: WebSocket, conversation_id: str):
     msg_queue: asyncio.Queue = asyncio.Queue()
     stop_event = asyncio.Event()
 
-    prefill_task = asyncio.create_task(_prefill_history(conv, kv_cache, stop_event))
+    prefill_task = asyncio.create_task(_prefill_history(conv, kv_cache))
 
     async def _receiver():
         try:
