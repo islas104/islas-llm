@@ -98,6 +98,11 @@ const _wsHandlers = {
       state.activeBubble.innerHTML = `<span class="queued-msg">${data.message}</span>`;
     }
   },
+  thinking() {
+    if (state.activeBubble && !state.activeBubble._raw) {
+      state.activeBubble.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+    }
+  },
   message_saved(data) {
     const wrap = state.activeBubble?.closest('.message');
     if (wrap) wrap.dataset.msgId = data.message.id;

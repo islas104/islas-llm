@@ -1,6 +1,6 @@
 # ⚡ Islas AI
 
-A fully custom AI chat product built from the ground up — Mistral 7B running locally on Apple Silicon, served publicly at **[islas-ai.com](https://islas-ai.com)** via Cloudflare Tunnel with CI/CD auto-deploy on every push.
+A fully custom AI chat product built from the ground up — Qwen 2.5 7B running locally on Apple Silicon, served publicly at **[islas-ai.com](https://islas-ai.com)** via Cloudflare Tunnel with CI/CD auto-deploy on every push.
 
 ---
 
@@ -12,11 +12,10 @@ A fully custom AI chat product built from the ground up — Mistral 7B running l
 
 ## Features
 
-- **Local inference** — Mistral 7B Instruct (4-bit) via Apple MLX, no API costs, runs entirely on-device
+- **Local inference** — Qwen 2.5 7B Instruct (4-bit) via Apple MLX, no API costs, runs entirely on-device
 - **WebSocket streaming** — real-time token-by-token responses with auto-reconnect and ping keepalive
-- **Token batching** — tokens buffered and flushed every 6 tokens or 30 ms, reducing frame overhead
-- **KV cache** — per-session KV cache so only new tokens are prefilled each turn
-- **Token-aware context trimming** — oldest messages dropped to stay within Mistral's 4096-token limit
+- **KV cache** — per-session KV cache pre-warmed on connect; only new tokens are prefilled each turn
+- **Token-aware context trimming** — oldest messages dropped to stay within the 8k token budget (Qwen 2.5 supports 32k)
 - **Per-user isolation** — each browser gets its own private chat history via a localStorage user ID, no login required
 - **Persistent conversations** — all chats saved to SQLite (WAL mode, 32 MB page cache)
 - **Startup warm-up** — dummy inference at boot compiles MLX compute graphs for consistent first-response latency
@@ -25,17 +24,17 @@ A fully custom AI chat product built from the ground up — Mistral 7B running l
 - **Temperature & max tokens** — adjustable per session
 - **Export** — download any conversation as a markdown file
 - **Feedback reporting** — in-app issue reporting stored to DB, viewable by the developer
-- **Mobile responsive** — works on iPhone and Android with safe-area insets and virtual keyboard handling
+- **Mobile responsive** — works on iPhone and Android with safe-area insets, FAB feedback button, and bottom-sheet modal
 - **Daily backups** — SQLite database backed up automatically every day, retaining the last 7 snapshots
 - **Security** — HSTS, CSP, CORS, GZip, IP-based rate limiting, UUID-validated user IDs, secure session cookies
 - **CI/CD** — GitHub Actions self-hosted runner auto-deploys to the live server on every push to `main`
-- **Cloudflare Tunnel** — permanently exposed at `islas-ai.com` with no open ports or port forwarding
+- **Cloudflare Tunnel** — permanently exposed at `islas-ai.com` with no open ports or port forwarding; tunnel auto-restarts via launchd
 
 ## Stack
 
 | Layer | Technology |
 |-------|------------|
-| Model | Mistral 7B Instruct (4-bit, MLX) |
+| Model | Qwen 2.5 7B Instruct (4-bit, MLX) |
 | Backend | FastAPI + WebSockets + SQLite |
 | Frontend | Vanilla JS, marked.js, highlight.js, DOMPurify |
 | Deployment | Cloudflare Tunnel + GitHub Actions (self-hosted runner) |
@@ -119,7 +118,7 @@ islas-llm/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MODEL_ID` | HuggingFace model ID | `mlx-community/Mistral-7B-Instruct-v0.3-4bit` |
+| `MODEL_ID` | HuggingFace model ID | `mlx-community/Qwen2.5-7B-Instruct-4bit` |
 | `HF_TOKEN` | HuggingFace access token | — |
 | `PORT` | Server port | `8000` |
 | `PASSWORD_HASH` | scrypt hash (run `setup.py`) — optional | — |
